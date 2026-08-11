@@ -140,6 +140,7 @@
     "t_settings_save": "Save and close",
 
 
+    "t_open_pkg_terminal_action": "Open this notebook's package environment in a Julia terminal.",
     "t_export_action_ellipsis": "Export...",
     "t_export_category_export": "export",
     "t_export_category_record": "record",

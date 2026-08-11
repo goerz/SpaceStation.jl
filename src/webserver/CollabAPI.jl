@@ -114,6 +114,51 @@ function remove_collab_registry_file(port::Integer)
     catch end
 end
 
+# --- the notebook package environment, opened in a terminal (SpaceStation) ---
+
+"""
+The shell command that opens a notebook's embedded package environment in an interactive Julia
+session, minus its final argument: the hub appends one shell-quoted notebook path.
+
+`Pluto.activate_notebook_environment` copies the notebook's embedded project + manifest into a temp
+directory, activates it, and watches both ends, so `pkg> update` in that REPL is written straight
+back into the `.jl`. This builds the invocation rather than shipping a fixed string because the
+notebook must be opened by *this* server's Julia and from an environment where SpaceStation is
+importable, neither of which the browser can know.
+
+The notebook does NOT have to be shut down first, unlike upstream Pluto: lazy mode keeps the file
+watcher running (`SessionActions.jl`), so an environment written here is picked up by
+`update_from_file` within about a second and surfaces as Pluto's "restart required" banner. What
+still races is a *simultaneous* full-file write from both sides, hence the note the REPL prints.
+"""
+function notebook_env_command_prefix()::String
+    julia = Base.julia_cmd()[1]
+    project = something(Base.active_project(), "")
+    project_dir = isempty(project) ? "" : dirname(project)
+    note = "\\nThis notebook can stay open: SpaceStation syncs the environment back and flags the " *
+           "notebook as needing a restart. Avoid editing its package imports in the browser while " *
+           "this REPL is active.\\n"
+    code = string(
+        "using SpaceStation; ",
+        "SpaceStation.activate_notebook_environment(ARGS[1]); ",
+        "printstyled(\"$note\"; color=:light_black)",
+    )
+    parts = [_shell_quote(julia)]
+    isempty(project_dir) || push!(parts, "--project=" * _shell_quote(project_dir))
+    push!(parts, "-i", "-e", _shell_quote(code), "--")
+    join(parts, " ")
+end
+
+"""
+Single-quote an argument for the shell the integrated terminal runs, so a path or a Julia expression
+with spaces arrives in one piece. Both dialects take single quotes as literal strings; they differ
+only in how an embedded quote is escaped. (`cmd.exe`, the last-resort fallback when neither pwsh nor
+powershell exists, has no equivalent and is not handled.)
+"""
+_shell_quote(s) = Sys.iswindows() ?
+    "'" * replace(String(s), "'" => "''") * "'" :
+    "'" * replace(String(s), "'" => "'\\''") * "'"
+
 # --- the workspace tree (SpaceStation) ---
 
 "Does this file look like a Pluto notebook? (`.jl` extension + the Pluto header on line 1)"
@@ -667,6 +712,9 @@ function register_collab_api!(router, session::ServerSession)
             # the integrated terminal's pty is ConPTY here — xterm.js needs to know to enable
             # its Windows heuristics (see TerminalView in land.js)
             "windows" => Sys.iswindows(),
+            # prefix for the "open this notebook's package environment" terminal button; the hub
+            # appends a shell-quoted notebook path (see notebook_env_command_prefix)
+            "notebook_env_command" => notebook_env_command_prefix(),
         ])
         HTTP.Response(200, ["Content-Type" => "application/json; charset=utf-8"], body * "\n")
     end

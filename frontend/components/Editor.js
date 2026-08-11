@@ -1785,6 +1785,26 @@ ${t("t_key_autosave_description")}`
                                                   ? restart_button(t("t_process_give_permission_to_run_code"), true)
                                                   : null
                             }</div>
+                            ${
+                                // SpaceStation only: hand the notebook's embedded package environment to a Julia
+                                // REPL in the hub's integrated terminal. The hub owns terminals, and this editor
+                                // is same-origin inside its iframe, so the button just asks the parent frame.
+                                // Hidden when the notebook manages its own environment (Pkg.activate in a cell) —
+                                // activate_notebook_environment refuses those.
+                                window.self !== window.top && notebook.nbpkg?.enabled === true && notebook.path && !notebook.in_temp_dir
+                                    ? html`<button
+                                          class="open_pkg_terminal"
+                                          title=${t("t_open_pkg_terminal_action")}
+                                          onClick=${() =>
+                                              window.parent.postMessage(
+                                                  { type: "spacestation open pkg terminal", path: notebook.path, label: notebook.shortpath },
+                                                  window.location.origin
+                                              )}
+                                      >
+                                          <span></span>
+                                      </button>`
+                                    : null
+                            }
                             <button class="toggle_export" title=${t("t_export_action_ellipsis")} onClick=${() =>
                                 this.setState({ export_menu_open: !export_menu_open })}><span></span></button>
                         </nav>

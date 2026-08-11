@@ -31,6 +31,11 @@ const get_json = async (url, opts) => {
 // basename in components/FilePicker.js, which is not exported.
 const basename = (p) => (p.split("/").pop() ?? "").split("\\").pop() ?? ""
 
+// Single-quote one argument for the shell the integrated terminal runs, mirroring _shell_quote in
+// CollabAPI.jl — the server quotes the command it hands us, we quote the path we append to it. Both
+// dialects read single quotes literally and differ only in how an embedded quote is escaped.
+const shell_quote = (s, windows = false) => "'" + String(s).replaceAll("'", windows ? "''" : "'\\''") + "'"
+
 // A confirm() the browser can't suppress. window.confirm can be permanently silenced (Chrome's
 // "prevent this page from creating additional dialogs", iframes without allow-modals) — it then
 // returns false instantly and every destructive button in the hub appears dead, with no error.
@@ -633,9 +638,13 @@ const read_terminal_theme = () => {
  *  bytes as binary frames. The shell starts in the workspace folder and PERSISTS on the server by
  *  `tid` — so reattaching (a tab switch, a reload) replays scrollback. Used by both the docked
  *  terminal and each terminal tab; the only difference is which `tid` they own. */
-const TerminalView = ({ tid, cwd, visible }) => {
+const TerminalView = ({ tid, cwd, run = null, visible }) => {
     const node_ref = useRef(null)
     const started = useRef(false)
+    // `run` is typed into the shell exactly once, when it first attaches. Guarded by a ref rather
+    // than by props because a reattach (tab switch, dock change) replays the same props — and the
+    // saved terminal list drops `run` on reload, so a refresh never re-runs it either.
+    const run_sent = useRef(false)
     const fit_ref = useRef(null)
     const refit_timer = useRef(null)
     // Held so the unmount cleanup can tear them all down. Without this, unmounting (closing the
@@ -816,7 +825,16 @@ const TerminalView = ({ tid, cwd, visible }) => {
                         term.resize(meta.cols, meta.rows)
                     } catch {}
                 }
-                if (meta.replayed) sync_size_to_panel()
+                if (meta.replayed) {
+                    sync_size_to_panel()
+                    // Type the seeded command now that the shell has drawn its prompt at the right size.
+                    // Sent as ordinary keystrokes rather than run behind the user's back, so it lands in
+                    // the shell's history and stays on screen as a record of what opened this session.
+                    if (run && !run_sent.current && socket?.readyState === WebSocket.OPEN) {
+                        run_sent.current = true
+                        socket.send("0:" + run + "\r")
+                    }
+                }
             }
             socket.onopen = () => refit()
             socket.onclose = () => term.write("\r\n\x1b[2m[disconnected — the shell is still running; reload to reattach]\x1b[0m\r\n")
@@ -1065,9 +1083,17 @@ const Land = () => {
     // This server may be reached over an SSH tunnel (when it's a remote workspace). If so, its child
     // workspace ports aren't forwarded to the browser, so workspaces open IN-PLACE rather than in new tabs.
     const [tunneled, set_tunneled] = useState(false)
+    // The server builds this: the Julia binary and project it runs itself, which the browser cannot know.
+    // A notebook path gets shell-quoted onto the end. See notebook_env_command_prefix in CollabAPI.jl.
+    const env_command_prefix = useRef(/** @type {String?} */ (null))
+    const server_is_windows = useRef(false)
     useEffect(() => {
         get_json("./api/v1/config")
-            .then((c) => set_tunneled(!!(c && c.tunneled)))
+            .then((c) => {
+                set_tunneled(!!(c && c.tunneled))
+                env_command_prefix.current = c?.notebook_env_command ?? null
+                server_is_windows.current = !!c?.windows
+            })
             .catch(() => {})
     }, [])
 
@@ -1227,14 +1253,19 @@ const Land = () => {
         [add_tab]
     )
 
-    const new_terminal = useCallback(() => {
-        if (workspace?.root == null || terminals_workspace.current !== workspace.root) return
-        terminal_seq.current += 1
-        const tid = "term-" + Math.random().toString(36).slice(2, 12)
-        set_terminals((ts) => [...ts, { tid, label: `Terminal ${terminal_seq.current}` }])
-        set_active_terminal(tid)
-        set_terminal_open(true)
-    }, [workspace?.root])
+    // `run` is typed into the fresh shell once it has attached, and `label` names its tab. Both are
+    // optional: a plain click on "＋" opens an empty "Terminal N" like before.
+    const new_terminal = useCallback(
+        ({ run = null, label = null } = {}) => {
+            if (workspace?.root == null || terminals_workspace.current !== workspace.root) return
+            terminal_seq.current += 1
+            const tid = "term-" + Math.random().toString(36).slice(2, 12)
+            set_terminals((ts) => [...ts, { tid, label: label ?? `Terminal ${terminal_seq.current}`, run }])
+            set_active_terminal(tid)
+            set_terminal_open(true)
+        },
+        [workspace?.root]
+    )
 
     const close_terminal = useCallback((tid) => {
         // Reap the server-side shell (this is a real close, not a detach) — best-effort; the tab is
@@ -1246,6 +1277,27 @@ const Land = () => {
             return remaining
         })
     }, [])
+
+    // The notebook editor's "package environment" button (Editor.js) asks the hub to open a terminal
+    // for it: the editor lives in an iframe and has no terminals of its own. Only same-origin frames
+    // we are actually hosting may ask — an embedded page could otherwise seed shell input.
+    useEffect(() => {
+        const on_message = (e) => {
+            if (e.origin !== window.location.origin) return
+            if (e.data?.type !== "spacestation open pkg terminal") return
+            const frames = document.querySelectorAll("#frames iframe")
+            if (![...frames].some((f) => f.contentWindow === e.source)) return
+            const prefix = env_command_prefix.current
+            const path = e.data.path
+            if (prefix == null || typeof path !== "string" || path === "") {
+                set_error("Could not work out how to start Julia for this notebook's package environment.")
+                return
+            }
+            new_terminal({ run: `${prefix} ${shell_quote(path, server_is_windows.current)}`, label: `Pkg: ${basename(path)}` })
+        }
+        window.addEventListener("message", on_message)
+        return () => window.removeEventListener("message", on_message)
+    }, [new_terminal])
 
     // Opening the terminal panel with no terminals yet spins up the first one, but only AFTER the
     // saved list for this workspace has reached React state. On a hard refresh `terminal_open` is
@@ -1494,7 +1546,7 @@ const Land = () => {
         <div class="terminal-bodies">
             ${(terminals_workspace.current === workspace?.root ? terminals : []).map(
                 (t) => html`<div key=${t.tid} class="terminal-body ${t.tid === active_terminal ? "active" : ""}">
-                    <${TerminalView} tid=${t.tid} cwd=${workspace?.root} visible=${shown && t.tid === active_terminal} />
+                    <${TerminalView} tid=${t.tid} cwd=${workspace?.root} run=${t.run} visible=${shown && t.tid === active_terminal} />
                 </div>`
             )}
         </div>
