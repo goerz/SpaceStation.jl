@@ -199,9 +199,29 @@
         --cm-color-editor-li-aria-selected: white;
         --cm-color-editor-li-notexported: rgba(255, 255, 255, 0.5);
         --code-background: hsl(222deg 16% 19%);
-        /* the integrated terminal interior is dark in both themes (same values as light.css) */
+        /* The integrated terminal follows the UI theme (light.css has the white counterpart). The 16
+           ANSI colors are the Tango palette xterm.js ships as its default, spelled out here so both
+           themes define the same set and either can be overridden on its own. */
         --terminal-bg: hsl(222deg 16% 19%);
         --terminal-fg: hsl(0deg 0% 77%);
+        --terminal-cursor: hsl(0deg 0% 77%);
+        --terminal-selection: #ffffff40;
+        --terminal-ansi-black: #2e3436;
+        --terminal-ansi-red: #cc0000;
+        --terminal-ansi-green: #4e9a06;
+        --terminal-ansi-yellow: #c4a000;
+        --terminal-ansi-blue: #3465a4;
+        --terminal-ansi-magenta: #75507b;
+        --terminal-ansi-cyan: #06989a;
+        --terminal-ansi-white: #d3d7cf;
+        --terminal-ansi-bright-black: #555753;
+        --terminal-ansi-bright-red: #ef2929;
+        --terminal-ansi-bright-green: #8ae234;
+        --terminal-ansi-bright-yellow: #fce94f;
+        --terminal-ansi-bright-blue: #729fcf;
+        --terminal-ansi-bright-magenta: #ad7fa8;
+        --terminal-ansi-bright-cyan: #34e2e2;
+        --terminal-ansi-bright-white: #eeeeec;
         --cm-color-code-differs-gutters: rgb(235 213 28 / 11%);
         --cm-color-line-numbers: #8d86875e;
         --cm-selection-background: hsl(215deg 64% 59% / 48%);

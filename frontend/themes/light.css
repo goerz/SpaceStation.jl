@@ -199,9 +199,31 @@
         --cm-color-editor-li-aria-selected: white;
         --cm-color-editor-li-notexported: rgba(0, 0, 0, 0.5);
         --code-background: hsla(46, 90%, 98%, 1);
-        /* the integrated terminal interior stays dark even in light mode (the dark-theme code colors) */
-        --terminal-bg: hsl(222deg 16% 19%);
-        --terminal-fg: hsl(0deg 0% 77%);
+        /* The integrated terminal follows the UI theme, so in light mode it is a white terminal. That
+           means the whole ANSI palette has to be re-picked: the usual 16 colors are chosen against a
+           dark ground and half of them (yellow, green, cyan, the bright set) wash out on white. These
+           are darkened to clear 4.5:1 against the background, and "bright" means more saturated rather
+           than lighter — otherwise bright-on-white is the least readable text on screen. */
+        --terminal-bg: #ffffff;
+        --terminal-fg: #24292f;
+        --terminal-cursor: #24292f;
+        --terminal-selection: #0969da40;
+        --terminal-ansi-black: #24292f;
+        --terminal-ansi-red: #cf222e;
+        --terminal-ansi-green: #116329;
+        --terminal-ansi-yellow: #8a6100;
+        --terminal-ansi-blue: #0969da;
+        --terminal-ansi-magenta: #8250df;
+        --terminal-ansi-cyan: #1b7c83;
+        --terminal-ansi-white: #6e7781;
+        --terminal-ansi-bright-black: #57606a;
+        --terminal-ansi-bright-red: #a40e26;
+        --terminal-ansi-bright-green: #1a7f37;
+        --terminal-ansi-bright-yellow: #6b4a00;
+        --terminal-ansi-bright-blue: #0550ae;
+        --terminal-ansi-bright-magenta: #6639ba;
+        --terminal-ansi-bright-cyan: #106572;
+        --terminal-ansi-bright-white: #8c959f;
         --cm-color-code-differs-gutters: rgba(214, 172, 35, 0.2);
         --cm-color-line-numbers: #8d86875e;
         --cm-selection-background: hsl(214deg 100% 73% / 48%);

@@ -597,6 +597,37 @@ const WorkspaceOpener = ({ on_cancel, tunneled }) => {
 }
 
 
+/** The terminal palette, read out of the active theme stylesheet (themes/light.css + dark.css).
+ *  xterm paints to a canvas, so it needs literal colors — a `var(--terminal-bg)` means nothing to it.
+ *  Re-read whenever the OS flips light/dark, since those custom properties change underneath us. */
+const read_terminal_theme = () => {
+    const styles = getComputedStyle(document.documentElement)
+    const v = (name, fallback) => styles.getPropertyValue(name).trim() || fallback
+    return {
+        background: v("--terminal-bg", "#1f1f1f"),
+        foreground: v("--terminal-fg", "#dddddd"),
+        cursor: v("--terminal-cursor", "#dddddd"),
+        cursorAccent: v("--terminal-bg", "#1f1f1f"),
+        selectionBackground: v("--terminal-selection", "#ffffff40"),
+        black: v("--terminal-ansi-black", "#2e3436"),
+        red: v("--terminal-ansi-red", "#cc0000"),
+        green: v("--terminal-ansi-green", "#4e9a06"),
+        yellow: v("--terminal-ansi-yellow", "#c4a000"),
+        blue: v("--terminal-ansi-blue", "#3465a4"),
+        magenta: v("--terminal-ansi-magenta", "#75507b"),
+        cyan: v("--terminal-ansi-cyan", "#06989a"),
+        white: v("--terminal-ansi-white", "#d3d7cf"),
+        brightBlack: v("--terminal-ansi-bright-black", "#555753"),
+        brightRed: v("--terminal-ansi-bright-red", "#ef2929"),
+        brightGreen: v("--terminal-ansi-bright-green", "#8ae234"),
+        brightYellow: v("--terminal-ansi-bright-yellow", "#fce94f"),
+        brightBlue: v("--terminal-ansi-bright-blue", "#729fcf"),
+        brightMagenta: v("--terminal-ansi-bright-magenta", "#ad7fa8"),
+        brightCyan: v("--terminal-ansi-bright-cyan", "#34e2e2"),
+        brightWhite: v("--terminal-ansi-bright-white", "#eeeeec"),
+    }
+}
+
 /** A terminal view: xterm.js bridged to a real shell over the /terminal websocket, keyed by `tid`.
  *  Wire protocol: we send "0:<keys>" and "1:<rows>,<cols>" text frames; the server sends raw PTY
  *  bytes as binary frames. The shell starts in the workspace folder and PERSISTS on the server by
@@ -617,6 +648,7 @@ const TerminalView = ({ tid, cwd, visible }) => {
     const term_ref = useRef(/** @type {any} */ (null))
     const ro_ref = useRef(/** @type {ResizeObserver?} */ (null))
     const paste_cleanup_ref = useRef(/** @type {(() => void)?} */ (null))
+    const theme_cleanup_ref = useRef(/** @type {(() => void)?} */ (null))
 
     // Fit ONLY when the host is genuinely on-screen at a real size, and debounced so a panel that
     // is animating open settles before we measure. Fitting a hidden tab (display:none → 0px) makes
@@ -650,7 +682,6 @@ const TerminalView = ({ tid, cwd, visible }) => {
                 import("https://esm.sh/@xterm/addon-fit@0.10.0?target=es2020"),
                 get_json("./api/v1/config").catch(() => null),
             ])
-            const styles = getComputedStyle(document.documentElement)
             const term = new Terminal({
                 fontSize: 13,
                 fontFamily: "JuliaMono, SFMono-Regular, Menlo, Consolas, monospace",
@@ -661,11 +692,7 @@ const TerminalView = ({ tid, cwd, visible }) => {
                 // around ConPTY's full-viewport repaints) or redraw-in-place TUIs — Claude Code, vim,
                 // anything Ink-style — leave stale duplicated frames stacked above the live one.
                 ...(config?.windows ? { windowsPty: { backend: "conpty" } } : {}),
-                theme: {
-                    // the terminal interior stays dark in both themes (see --terminal-bg/fg in themes/*.css)
-                    background: styles.getPropertyValue("--terminal-bg").trim() || "#1f1f1f",
-                    foreground: styles.getPropertyValue("--terminal-fg").trim() || "#dddddd",
-                },
+                theme: read_terminal_theme(),
             })
             const fit = new FitAddon()
             term.loadAddon(fit)
@@ -681,6 +708,17 @@ const TerminalView = ({ tid, cwd, visible }) => {
                 return
             }
             term.open(node_ref.current)
+
+            // A running shell keeps its scrollback across an OS light/dark flip, so repaint it in the
+            // new palette rather than leaving white-on-white text behind.
+            const scheme = window.matchMedia("(prefers-color-scheme: dark)")
+            const on_scheme_change = () => {
+                try {
+                    term.options.theme = read_terminal_theme()
+                } catch {}
+            }
+            scheme.addEventListener("change", on_scheme_change)
+            theme_cleanup_ref.current = () => scheme.removeEventListener("change", on_scheme_change)
 
             // Assigned when the websocket opens (below); the paste handler needs it, so it lives out here.
             let socket = null
@@ -800,6 +838,8 @@ const TerminalView = ({ tid, cwd, visible }) => {
             clearTimeout(refit_timer.current)
             paste_cleanup_ref.current?.()
             paste_cleanup_ref.current = null
+            theme_cleanup_ref.current?.()
+            theme_cleanup_ref.current = null
             try {
                 ro_ref.current?.disconnect()
             } catch {}

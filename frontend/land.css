@@ -1415,9 +1415,12 @@ body.resizing-v #frames iframe {
     height: 100%;
     overflow: hidden;
     border-radius: 0.4rem;
-    /* the interior is always dark (matches the xterm theme), even in light mode — covers the padding
-       and prevents a light flash before xterm paints its own canvas */
+    /* the same ground xterm paints its canvas on — covers the padding, and stops the panel flashing
+       the other theme's color in the moment before xterm loads */
     background-color: var(--terminal-bg);
+    /* a hairline so the terminal still reads as its own surface in light mode, where its white sits on
+       the panel's near-white card */
+    box-shadow: 0 0 0 1px var(--rule-color);
 }
 .terminal-body .xterm {
     height: 100%;
