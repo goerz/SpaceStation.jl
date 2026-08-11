@@ -14,6 +14,7 @@
 //   POST ./move?id=…&newpath=…     rename/move (used to place new notebooks in the workspace)
 //   POST ./shutdown?id=…           stop a notebook session
 import { html, render, useState, useEffect, useCallback, useRef } from "./imports/Preact.js"
+import { SWITCH_TAB_MESSAGE, listen_for_tab_switch } from "./common/HubShortcuts.js"
 
 const get_text = async (url, opts) => {
     const r = await fetch(url, opts)
@@ -1513,6 +1514,42 @@ const Land = () => {
         if (next && terminal_dock === "tab") set_active("__terminal__")
         if (!next) set_active((a) => (a === "__terminal__" ? null : a))
     }, [terminal_open, terminal_dock])
+
+    // ⌘⇧] / ⌘⇧[ walks the tab strip, wrapping at both ends, in the order the tabs are drawn (the
+    // "Terminal" tab is last when the terminal is docked as one). See common/HubShortcuts.js for how
+    // the shortcut reaches us from inside a notebook iframe.
+    const switch_tab = useCallback(
+        (delta) => {
+            const ids = [...tabs.map((t) => t.id), ...(tab_mode ? ["__terminal__"] : [])]
+            if (ids.length === 0) return
+            // Functional update: two presses in quick succession are one render apart at most, and
+            // the second must step off the tab the first chose, not off the one React last painted.
+            set_active((a) => {
+                const current = ids.indexOf(a)
+                return ids[current < 0 ? (delta > 0 ? 0 : ids.length - 1) : (current + delta + ids.length) % ids.length]
+            })
+            // Hiding a frame (display: none) drops focus to the body, so the keyboard would land
+            // nowhere. Hand it to the frame we just revealed, once the switch has painted.
+            requestAnimationFrame(() => document.querySelector("#frames iframe.active")?.focus())
+        },
+        [tabs, tab_mode]
+    )
+
+    useEffect(() => listen_for_tab_switch(switch_tab), [switch_tab])
+
+    // The same shortcut pressed inside a notebook tab: that iframe's document forwards it here.
+    // Only same-origin frames we are actually hosting may drive the tab strip.
+    useEffect(() => {
+        const on_message = (e) => {
+            if (e.origin !== window.location.origin) return
+            if (e.data?.type !== SWITCH_TAB_MESSAGE) return
+            const frames = document.querySelectorAll("#frames iframe")
+            if (![...frames].some((f) => f.contentWindow === e.source)) return
+            switch_tab(e.data.delta > 0 ? +1 : -1)
+        }
+        window.addEventListener("message", on_message)
+        return () => window.removeEventListener("message", on_message)
+    }, [switch_tab])
 
     const cycle_dock = useCallback(() => {
         const next = terminal_dock === "bottom" ? "right" : terminal_dock === "right" ? "tab" : "bottom"

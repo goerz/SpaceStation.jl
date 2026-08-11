@@ -7,6 +7,12 @@ import { unpack } from "./common/MsgPack.js"
 import { RawHTMLContainer } from "./components/CellOutput.js"
 import { ProcessStatus } from "./common/ProcessStatus.js"
 import { parse_launch_params } from "./common/parse_launch_params.js"
+import { forward_tab_switch_to_hub } from "./common/HubShortcuts.js"
+
+// SpaceStation only: ⌘⇧] / ⌘⇧[ switches notebook tabs when this editor is a tab in the hub. The
+// keydown happens in this iframe's document, so the hub can only see it if we pass it on. No-op
+// for a standalone or embedded editor.
+forward_tab_switch_to_hub()
 
 const url_params = new URLSearchParams(window.location.search)
 
