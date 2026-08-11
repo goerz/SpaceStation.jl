@@ -588,7 +588,16 @@ export let RawHTMLContainer = ({ body, className = "", persist_js_state = false,
             }
         }
 
-        if (sanitize_html) return
+        if (sanitize_html) {
+            // Safe preview skips the script block below, but it still needs Pluto's own markup pass:
+            // MathJax typesetting, syntax highlighting, copy buttons. None of that runs code the
+            // notebook wrote — it only reads the DOM DOMPurify just handed us. Without it, `text/latex`
+            // output (which PlutoRunner turns into <p class="tex">$$…$$</p>) is only ever typeset by
+            // MathJax's page-wide pass at startup, so any output that lands after that pass — a big
+            // one, a late one — keeps its raw $$…$$ on screen with nothing left to render it.
+            apply_enhanced_markup_features(container, pluto_actions)
+            return
+        }
 
         let scripts_in_shadowroots = Array.from(container.querySelectorAll("template[shadowroot]")).flatMap((template) => {
             // @ts-ignore
