@@ -1505,7 +1505,12 @@ const Land = () => {
     return html`
         <div id="land">
             ${sidebar_hidden
-                ? html`<button id="sidebar-reopen" title="Show sidebar" onClick=${() => set_sidebar_hidden(false)}>☰</button>`
+                ? html`<div id="sidebar-rail">
+                      <button id="sidebar-reopen" title="Show sidebar" onClick=${() => set_sidebar_hidden(false)}>☰</button>
+                      ${workspace?.root == null
+                          ? null
+                          : html`<p class="workspace-root" title=${workspace.root}><bdi>${workspace.root}</bdi></p>`}
+                  </div>`
                 : html`<aside style=${`width: ${sidebar_width}px`}>
                 <header class="bubble">
                     <div class="header-row">
@@ -1514,6 +1519,9 @@ const Land = () => {
                         </button>
                         <div class="header-text">
                             <h1 title=${workspace?.root ?? ""}>Space<span class="land-accent">Station</span></h1>
+                            ${workspace?.root == null
+                                ? null
+                                : html`<p class="workspace-root" title=${workspace.root}><bdi>${workspace.root}</bdi></p>`}
                         </div>
                         <div class="header-buttons">
                             <div class="header-menu" ref=${menu_ref}>
